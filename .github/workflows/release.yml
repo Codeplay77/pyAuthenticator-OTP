@@ -1,0 +1,83 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ASSET_NAME: PythonAuthenticator-${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}-win-x64
+
+jobs:
+  build:
+    name: Build Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python x64
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build executable
+        shell: cmd
+        run: call .\build.bat < NUL
+
+      - name: Verify x64 executable
+        run: |
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path "dist\PythonAuthenticator.exe").Path)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+          $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          if ($machine -ne 0x8664) {
+            throw "Expected x64 executable (0x8664), got machine type 0x$($machine.ToString('X4'))"
+          }
+
+      - name: Package release asset
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          $exe = "$env:ASSET_NAME.exe"
+          Copy-Item dist\PythonAuthenticator.exe "release\$exe"
+          $hash = (Get-FileHash "release\$exe" -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "release\$exe.sha256" -Value "$hash  $exe`n" -NoNewline -Encoding ascii
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ASSET_NAME }}
+          path: release/
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ env.ASSET_NAME }}
+          path: release
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" release/*
+          --repo "$GITHUB_REPOSITORY"
+          --title "$GITHUB_REF_NAME"
+          --generate-notes

@@ -112,6 +112,25 @@ pyinstaller --onefile --windowed --name=PythonAuthenticator \
 
 > Account data (`authenticator.db`, `key.key`) is stored next to the executable. `build.bat` only replaces `PythonAuthenticator.exe` and keeps the other files in `dist/`.
 
+### Automated Releases (Windows x64)
+
+Pushing a tag that starts with `v` runs [`.github/workflows/release.yml`](.github/workflows/release.yml). It builds the executable with 64-bit Python through `build.bat`, checks that the binary is x64 and publishes a GitHub release with:
+
+- `PythonAuthenticator-<tag>-win-x64.exe`
+- `PythonAuthenticator-<tag>-win-x64.exe.sha256`
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Running the workflow manually from the **Actions** tab builds `PythonAuthenticator-dev-win-x64.exe` as a downloadable artifact without creating a release.
+
+Verify a download:
+```bash
+sha256sum -c PythonAuthenticator-v1.0.0-win-x64.exe.sha256
+```
+
 ---
 
 ## Usage
