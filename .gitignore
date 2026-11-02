@@ -29,6 +29,7 @@ dist/PythonAuthenticator.exe
 # ---- Banco de dados, chaves e arquivos sensíveis ----
 authenticator.db
 key.key
+config.json
 
 # ---- Logs ----
 *.log

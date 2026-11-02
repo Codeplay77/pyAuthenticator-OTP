@@ -14,16 +14,8 @@ Author: Codeplay
 Date: June 2025
 """
 
-# Standard library imports
-import re
-from typing import Optional, Dict
-
-# Third-party imports
 import tkinter as tk
 from tkinter import messagebox
-
-# Local imports
-from config_manager import ConfigManager
 
 
 class AddAccountDialog:
@@ -32,12 +24,9 @@ class AddAccountDialog:
         self.totp_generator = totp_generator
         self.result = None
         self.setup_dialog()
-        self.config_manager = ConfigManager()
-    
+
     def setup_dialog(self):
         """Interface moderna do diálogo"""
-        
-        
         window_width = 420
         window_height = 780
         
@@ -49,7 +38,7 @@ class AddAccountDialog:
         self.dialog.grab_set()
         self.dialog.configure(bg='white')
         self.dialog.bind('<Escape>', lambda e: self.cancel())
-        self.dialog.bind('<Return>', lambda e: self.add_account() if self.secret_entry.get().strip() else None)
+        self.dialog.bind('<Return>', lambda e: self.add_account())
         self.dialog.update_idletasks()
         x = (self.dialog.winfo_screenwidth() // 2) - (window_width // 2)
         y = (self.dialog.winfo_screenheight() // 2) - (window_height // 2)
@@ -145,7 +134,7 @@ class AddAccountDialog:
         )
         self.name_entry.pack(fill='x', pady=(0, 20), ipady=8)
         
-        self.dialog.after(100, lambda: self.name_entry.focus())
+        self.dialog.after(100, self.name_entry.focus_force)
         
         tk.Label(
             form_frame,
@@ -281,18 +270,18 @@ class AddAccountDialog:
         issuer = self.issuer_entry.get().strip()
         
         if not name:
-            messagebox.showerror("Erro", "Nome da conta é obrigatório")
+            messagebox.showerror("Erro", "Nome da conta é obrigatório", parent=self.dialog)
             self.name_entry.focus()
             return
-        
+
         if not secret:
-            messagebox.showerror("Erro", "Chave secreta é obrigatória")
+            messagebox.showerror("Erro", "Chave secreta é obrigatória", parent=self.dialog)
             self.secret_entry.focus()
             return
-        
+
         is_valid, message = self.totp_generator.validate_secret(secret)
         if not is_valid:
-            messagebox.showerror("Erro", f"Chave secreta inválida:\n{message}")
+            messagebox.showerror("Erro", f"Chave secreta inválida:\n{message}", parent=self.dialog)
             self.secret_entry.focus()
             return
         
@@ -309,6 +298,11 @@ class AddAccountDialog:
         self.result = None
         self.dialog.destroy()
     
+    def bring_to_front(self):
+        self.dialog.deiconify()
+        self.dialog.lift()
+        self.dialog.focus_force()
+
     def show(self):
         """Mostra o diálogo e retorna resultado"""
         self.dialog.wait_window()

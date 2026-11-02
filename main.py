@@ -1,6 +1,6 @@
 """
 Python Authenticator - App similar ao Google Authenticator
-Autor: Claude AI
+Autor: Codeplay
 Data: 2025
 
 Aplicativo para gerar tokens TOTP (Time-based One-Time Password)

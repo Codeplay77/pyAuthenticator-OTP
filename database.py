@@ -16,14 +16,12 @@ Author: Codeplay
 Date: June 2025
 """
 
-# Standard library imports
 import os
 import sys
 import base64
 import sqlite3
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
-# Third-party imports
 from cryptography.fernet import Fernet
 
 
@@ -68,12 +66,10 @@ class Database:
         Raises:
             Exception: If encryption setup or database creation fails
         """
-        # Determine correct directory for application data files
         self.app_dir = self.get_app_directory()
         self.db_path = os.path.join(self.app_dir, "authenticator.db")
         self.key_path = os.path.join(self.app_dir, "key.key")
-        
-        # Initialize encryption and database
+
         self.setup_encryption()
         self.setup_database()
     
@@ -94,10 +90,8 @@ class Database:
             PyInstaller sets sys.frozen attribute when creating executables.
         """
         if getattr(sys, 'frozen', False):
-            # Executável PyInstaller - usar diretório do executável
             return os.path.dirname(sys.executable)
         else:
-            # Script Python normal - usar diretório do script
             return os.path.dirname(os.path.abspath(__file__))
     
     def setup_encryption(self) -> None:
@@ -285,8 +279,7 @@ class Database:
             accounts = cursor.fetchall()
             
             conn.close()
-            
-            # Descriptografa as chaves secretas
+
             decrypted_accounts = []
             for account in accounts:
                 try:

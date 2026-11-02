@@ -13,16 +13,10 @@ Author: Codeplay
 Date: June 2025
 """
 
-# Standard library imports
-import os
-import base64
-import sqlite3
 from typing import Callable, Tuple
 
-# Third-party imports
 import tkinter as tk
 from tkinter import messagebox
-from cryptography.fernet import Fernet
 
 
 class TokenWidget(tk.Frame):
@@ -78,13 +72,11 @@ class TokenWidget(tk.Frame):
             on_delete_callback: Function to call when account is deleted
         """
         super().__init__(parent, bg='#f0f2f5')
-        
-        # Unpack account data
+
         self.account_id, self.name, self.secret, self.issuer = account_data
         self.totp_generator = totp_generator
         self.on_delete_callback = on_delete_callback
-        
-        # Build UI and display initial token
+
         self.setup_ui()
         self.update_token()
     
@@ -259,114 +251,50 @@ class TokenWidget(tk.Frame):
         )
         self.status_label.pack(side='right')
     
-    def load_encryption_key(self):
-        """Carrega a chave de criptografia"""
-        key_path = "key.key"
-        
-        if not os.path.exists(key_path):
-            return None
-        
-        try:
-            with open(key_path, 'rb') as key_file:
-                key = key_file.read()
-            return Fernet(key)
-        except Exception as e:
-            print(f"Erro ao carregar chave: {e}")
-            return None
-    
-    def decrypt_secret(self, cipher, encrypted_secret):
-        """Descriptografa uma chave secreta"""
-        try:
-            return cipher.decrypt(base64.b64decode(encrypted_secret.encode())).decode()
-        except Exception as e:
-            print(f"Erro ao descriptografar: {e}")
-            return None
-    
     def copy_original_secret(self):
         """Copia a chave OTP original para o clipboard"""
         try:
             if not self.winfo_exists():
                 return
-            
+
             msg = (
                 "Você está prestes a copiar a chave secreta original desta conta.\n\n"
                 "ATENÇÃO: Esta chave dá acesso completo à sua autenticação de dois fatores!\n\n"
                 "Apenas copie se você sabe o que está fazendo.\n\n"
                 "Deseja continuar?"
             )
-            
+
             if not messagebox.askyesno("Aviso de Segurança", msg, parent=self):
                 return
-            
-            import sqlite3
-            
-            db_path = "authenticator.db"
-            if not os.path.exists(db_path):
-                messagebox.showerror("Erro", "Banco de dados não encontrado!", parent=self)
-                return
-            
-            cipher = self.load_encryption_key()
-            if not cipher:
-                messagebox.showerror("Erro", "Não foi possível carregar a chave de criptografia", parent=self)
-                return
-            
-            conn = None
-            try:
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                cursor.execute("SELECT secret FROM accounts WHERE id = ?", (self.account_id,))
-                result = cursor.fetchone()
-            except sqlite3.Error as e:
-                messagebox.showerror("Erro", f"Erro ao acessar banco de dados: {e}", parent=self)
-                return
-            finally:
-                if conn:
-                    conn.close()
-            
-            if not result:
-                messagebox.showerror("Erro", "Conta não encontrada no banco de dados", parent=self)
-                return
-            
-            encrypted_secret = result[0]
-            
-            original_secret = self.decrypt_secret(cipher, encrypted_secret)
-            
-            if original_secret:
-                self.clipboard_clear()
-                self.clipboard_append(original_secret)
-                self.update()  
-                
-                original_text = self.recover_btn['text']
-                original_color = self.recover_btn['fg']
-                
-                self.recover_btn.configure(text="✓", fg='#137333')
-                self.after(1500, lambda: self.recover_btn.configure(
-                    text=original_text, 
-                    fg=original_color
-                ))
-                
-                self.status_label.configure(text="🔑 Chave copiada", fg='#137333')
-                self.after(2000, lambda: self.status_label.configure(
-                    text="✓ Ativo", 
-                    fg='#137333'
-                ))
-                
-                messagebox.showinfo(
-                    "Sucesso", 
-                    "Chave secreta copiada para a área de transferência!\n\n"
-                    "Guarde-a em um local seguro.",
-                    parent=self
-                )
-                
-            else:
-                messagebox.showerror("Erro", "Não foi possível descriptografar a chave secreta", parent=self)
-                
+
+            self.clipboard_clear()
+            self.clipboard_append(self.secret)
+            self.update()
+
+            original_text = self.recover_btn['text']
+            original_color = self.recover_btn['fg']
+
+            self.recover_btn.configure(text="✓", fg='#137333')
+            self.after(1500, lambda: self.recover_btn.configure(
+                text=original_text,
+                fg=original_color
+            ))
+
+            self.status_label.configure(text="🔑 Chave copiada", fg='#137333')
+            self.after(2000, lambda: self.status_label.configure(
+                text="✓ Ativo",
+                fg='#137333'
+            ))
+
+            messagebox.showinfo(
+                "Sucesso",
+                "Chave secreta copiada para a área de transferência!\n\n"
+                "Guarde-a em um local seguro.",
+                parent=self
+            )
+
         except tk.TclError as e:
             print(f"Erro TclError ao copiar chave: {e}")
-        except Exception as e:
-            error_msg = f"Erro ao recuperar chave: {str(e)}"
-            print(f"❌ {error_msg}")
-            messagebox.showerror("Erro", error_msg, parent=self)
 
     def update_token(self):
         """Atualiza o código TOTP e UI"""
@@ -385,8 +313,9 @@ class TokenWidget(tk.Frame):
                 self.status_label.configure(text="✗ Erro", fg='#d93025')
                 print(f"Token inválido gerado para {self.name}: {token}")
             
+            period = self.totp_generator.period
             remaining = self.totp_generator.get_time_remaining()
-            progress = ((30 - remaining) / 30)
+            progress = (period - remaining) / period
             
             try:
                 container_width = self.progress_bg.winfo_width()
@@ -457,18 +386,20 @@ class TokenWidget(tk.Frame):
         if not self.winfo_exists():
             return
         
+        dialog_width = 350
+        dialog_height = 250
+
         dialog = tk.Toplevel(self)
         dialog.title("Confirmar exclusão")
-        dialog.geometry("350x250")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
         dialog.configure(bg='white')
-        
+
         dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (350 // 2)
-        y = (dialog.winfo_screenheight() // 2) - (200 // 2)
-        dialog.geometry(f"350x250+{x}+{y}")
+        x = (dialog.winfo_screenwidth() // 2) - (dialog_width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog_height // 2)
+        dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
         
         content = tk.Frame(dialog, bg='white', padx=30, pady=30)
         content.pack(fill='both', expand=True)
@@ -544,3 +475,7 @@ class TokenWidget(tk.Frame):
             command=confirm
         )
         delete_btn.pack(side='right')
+
+        dialog.bind('<Escape>', lambda e: cancel())
+        dialog.bind('<Return>', lambda e: confirm())
+        cancel_btn.focus_force()

@@ -19,12 +19,10 @@ Author: Codeplay
 Date: June 2025
 """
 
-# Standard library imports
 import re
 import time
 from typing import Tuple, Optional, Dict
 
-# Third-party imports
 import pyotp
 
 
@@ -48,36 +46,37 @@ class TOTPGenerator:
     
     def __init__(self) -> None:
         """Initialize TOTP generator with standard 30-second period."""
-        self.period = 30  # Standard TOTP time step
-    
+        self.period = 30
+
     def clean_secret(self, secret: str) -> str:
-        """Sanitize and normalize a TOTP secret key.
-        
-        Removes all characters that are not valid Base32 characters.
-        Base32 alphabet: A-Z (uppercase) and 2-7 (digits).
-        
+        """Normalize a TOTP secret key.
+
+        Removes whitespace, dashes and Base32 padding ("=") and converts
+        to uppercase. Any other character is kept so validate_secret()
+        can reject it instead of silently changing the key.
+
         Args:
             secret: Raw secret key (may contain spaces, dashes, etc.)
-            
+
         Returns:
-            Cleaned secret containing only [A-Z2-7]
-            
+            Normalized secret
+
         Examples:
             >>> clean_secret("JBSW Y3DP EHPK 3PXP")
             'JBSWY3DPEHPK3PXP'
             >>> clean_secret("jbsw-y3dp-ehpk-3pxp")
             'JBSWY3DPEHPK3PXP'
         """
-        return re.sub(r'[^A-Z2-7]', '', secret.upper())
-    
+        return re.sub(r'[\s=-]', '', secret).upper()
+
     def validate_secret(self, secret: str) -> Tuple[bool, str]:
         """Validate TOTP secret key format and length.
-        
+
         Performs comprehensive validation:
         1. Cleans the secret key
         2. Checks minimum length (8 characters)
         3. Validates Base32 alphabet
-        4. Tests TOTP object instantiation
+        4. Generates a token to confirm the key decodes as Base32
         
         Args:
             secret: Secret key to validate
@@ -102,10 +101,10 @@ class TOTPGenerator:
             return False, "Chave contém caracteres inválidos"
         
         try:
-            pyotp.TOTP(cleaned_secret)
-            return True, "Chave válida"
-        except Exception as e:
-            return False, f"Erro na validação: {str(e)}"
+            pyotp.TOTP(cleaned_secret).now()
+        except Exception:
+            return False, "Tamanho de chave inválido para Base32"
+        return True, "Chave válida"
     
     def generate_token(self, secret: str) -> str:
         """Generate current TOTP token.
@@ -135,7 +134,7 @@ class TOTPGenerator:
             totp = pyotp.TOTP(cleaned_secret)
             token = totp.now()
             return f"{int(token):06d}"
-        except Exception as e:
+        except Exception:
             return "ERROR"
     
     def get_time_remaining(self) -> int:

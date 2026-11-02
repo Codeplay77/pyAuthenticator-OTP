@@ -11,30 +11,24 @@ Python Version: 3.8+
 
 Dependencies:
     - tkinter: GUI framework
-    - threading: Background token updates
     - keyboard: Global hotkey support (optional)
     - pystray: System tray integration (optional)
 """
 
-# Standard library imports
-import sys
-import os
-import time
+import queue
 import threading
-from typing import Optional, List
+import time
+from typing import Dict, List
 
-# Third-party imports - GUI
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 
-# Local application imports
 from database import Database
 from totp_generator import TOTPGenerator
 from token_widget import TokenWidget
 from add_account_dialog import AddAccountDialog
 from config_manager import ConfigManager
 
-# Optional system tray support
 try:
     import pystray
     from PIL import Image, ImageDraw
@@ -53,26 +47,24 @@ class AuthenticatorApp:
     - Database operations for account storage
     - System tray integration
     - Global hotkey registration
-    - Background thread for token updates
     
     Attributes:
         root (tk.Tk): Main application window
         config_manager (ConfigManager): Application configuration handler
         database (Database): Database interface for account storage
         totp_generator (TOTPGenerator): TOTP token generation engine
-        token_widgets (List[TokenWidget]): List of active token display widgets
-        update_thread_running (bool): Flag to control background update thread
-        is_hidden (bool): Window visibility state
-        dialog_open (bool): Prevents multiple dialog instances
+        token_widgets (List[tk.Frame]): Widgets currently shown in the token list
+        add_dialog (Optional[AddAccountDialog]): Open add account dialog, if any
+        ui_actions (queue.Queue): Actions queued by the hotkey and tray threads
         tray_icon (Optional[pystray.Icon]): System tray icon instance
         tray_thread (Optional[threading.Thread]): System tray thread
         keyboard_module: Reference to keyboard module for hotkey cleanup
-        hotkeys_registered (List[str]): List of registered global hotkeys
+        registered_hotkeys (Dict[str, str]): Registered hotkey per action name
         
     Thread Safety:
-        - Uses root.after() for thread-safe GUI updates
-        - Background thread only schedules work on main thread
-        - Widget existence validated before operations
+        Hotkey and tray callbacks run outside the Tk thread, so they only
+        put actions in ui_actions. process_ui_actions() runs them on the
+        Tk main loop.
     """
     
     def __init__(self) -> None:
@@ -86,35 +78,32 @@ class AuthenticatorApp:
         Raises:
             Exception: If critical components fail to initialize
         """
-        # Core Tkinter setup
         self.root = tk.Tk()
         
-        # Application components
         self.config_manager = ConfigManager()
         self.database = Database()
         self.totp_generator = TOTPGenerator()
         
-        # UI state management
-        self.token_widgets: List[TokenWidget] = []
-        self.update_thread_running = True
-        self.is_hidden = False
-        self.dialog_open = False  # Prevents multiple dialog instances
+        self.token_widgets: List[tk.Frame] = []
+        self.add_dialog = None
+        self.status_reset_job = None
+        self.closing = False
         
-        # System tray components (optional feature)
-        self.tray_icon: Optional[pystray.Icon] = None
-        self.tray_thread: Optional[threading.Thread] = None
+        self.ui_actions = queue.Queue()
+        self.tray_icon = None
+        self.tray_thread = None
         
-        # Global hotkey management (optional feature)
         self.keyboard_module = None
-        self.hotkeys_registered: List[str] = []
+        self.registered_hotkeys: Dict[str, str] = {}
+        self.hotkeys_armed = True
         
-        # Initialize application components in order
         self.setup_ui()
         self.setup_styles()
         self.setup_hotkeys()
         self.setup_tray()
         self.load_accounts()
-        self.start_update_thread()
+        self.process_ui_actions()
+        self.refresh_tokens_loop()
     
     def setup_ui(self) -> None:
         """Configure the main user interface.
@@ -133,7 +122,6 @@ class AuthenticatorApp:
         self.root.minsize(380, 500)
         self.root.configure(bg='#f0f2f5')
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self.root.bind('<Escape>', lambda e: None)
         main_frame = tk.Frame(self.root, bg='#f0f2f5')
         main_frame.pack(fill='both', expand=True, padx=15, pady=15)
         header_frame = tk.Frame(main_frame, bg='#f0f2f5', height=80)
@@ -179,10 +167,9 @@ class AuthenticatorApp:
         status_frame.pack(side='bottom', fill='x', pady=(15, 0))
         status_frame.pack_propagate(False)
         
-        hotkey = self.config_manager.get('hotkeys.toggle_window', 'ctrl+shift+a')
         self.status_bar = tk.Label(
             status_frame,
-            text=f"Ready - {hotkey.upper()} to toggle",
+            text="",
             font=('Segoe UI', 9),
             fg='#5f6368',
             bg='#f0f2f5'
@@ -219,7 +206,7 @@ class AuthenticatorApp:
             self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
             
         self.scrollable_frame.bind('<Configure>', configure_scroll)
-        self.canvas.bind('<MouseWheel>', on_mousewheel)
+        self.root.bind('<MouseWheel>', on_mousewheel)
         
         self.canvas.configure(yscrollcommand=scrollbar.set)
         
@@ -241,81 +228,69 @@ class AuthenticatorApp:
         self.root.option_add('*Font', default_font)
     
     def setup_hotkeys(self) -> None:
-        """Configure global keyboard shortcuts.
+        """Register the global hotkeys defined in config.json.
         
-        Registers system-wide hotkeys for:
-        - Toggle window visibility (default: Ctrl+Shift+A)
-        - Add new account (default: Ctrl+Shift+N)
+        Actions:
+        - toggle_window (default: Ctrl+Shift+A): shows the window, or hides
+          it when it already has focus
+        - add_account (default: Ctrl+Shift+N): opens the add account dialog
         
-        Uses the 'keyboard' module which requires elevated permissions
-        on some systems. Gracefully handles ImportError if module unavailable.
-        
-        All hotkeys are thread-safe and use root.after() to schedule
-        actions on the main GUI thread.
-        
-        Note:
-            On Linux, this may require running as sudo.
-            On Windows, may trigger UAC prompts.
+        A hotkey set to "disabled" or left empty is not registered.
+        Each hotkey fires once per key press: keyboard auto-repeat is
+        ignored until a key is released.
         """
         try:
             import keyboard
-            self.keyboard_module = keyboard
-            
-            hotkeys = self.config_manager.get_hotkeys()
-            toggle_hotkey = hotkeys.get('toggle_window', 'ctrl+shift+a')
-            add_account_hotkey = hotkeys.get('add_account', 'ctrl+shift+n')
-            
-            if toggle_hotkey and toggle_hotkey != 'disabled':
-                try:
-                    keyboard.add_hotkey(toggle_hotkey, self._hotkey_toggle_window)
-                    self.hotkeys_registered.append(toggle_hotkey)
-                    print(f"✓ Hotkey registrado: {toggle_hotkey} (toggle window)")
-                except Exception as e:
-                    print(f"✗ Erro ao registrar hotkey {toggle_hotkey}: {e}")
-            
-            if add_account_hotkey and add_account_hotkey != 'disabled':
-                try:
-                    keyboard.add_hotkey(add_account_hotkey, self._hotkey_add_account)
-                    self.hotkeys_registered.append(add_account_hotkey)
-                    print(f"✓ Hotkey registrado: {add_account_hotkey} (add account)")
-                except Exception as e:
-                    print(f"✗ Erro ao registrar hotkey {add_account_hotkey}: {e}")
-            
         except ImportError:
             print("⚠ Módulo 'keyboard' não encontrado. Atalhos globais desabilitados.")
             print("  Instale com: pip install keyboard")
-            self.keyboard_module = None
-        except Exception as e:
-            print(f"✗ Erro ao configurar hotkeys: {e}")
-            self.keyboard_module = None
+            return
     
-    def _hotkey_toggle_window(self):
-        """Wrapper thread-safe para atalho de toggle"""
-        try:
-            self.root.after(0, self.toggle_window)
-        except Exception as e:
-            print(f"Erro no hotkey toggle: {e}")
+        actions = {
+            'toggle_window': self.toggle_window,
+            'add_account': self.add_account,
+        }
+        hotkeys = self.config_manager.get_hotkeys()
     
-    def _hotkey_add_account(self):
-        """Wrapper thread-safe para atalho de adicionar conta"""
-        try:
-            self.root.after(0, self.add_account)
-        except Exception as e:
-            print(f"Erro no hotkey add account: {e}")
+        for name, action in actions.items():
+            hotkey = hotkeys.get(name)
+            if not hotkey or hotkey == 'disabled':
+                continue
+            try:
+                keyboard.add_hotkey(hotkey, self._on_hotkey, args=(action,))
+            except Exception as e:
+                print(f"✗ Erro ao registrar hotkey {hotkey}: {e}")
+                continue
+            self.registered_hotkeys[name] = hotkey
+            print(f"✓ Hotkey registrado: {hotkey} ({name})")
+
+        if self.registered_hotkeys:
+            keyboard.on_release(self._rearm_hotkeys)
+            self.keyboard_module = keyboard
+
+    def _on_hotkey(self, action):
+        if self.hotkeys_armed:
+            self.hotkeys_armed = False
+            self.ui_actions.put(action)
+
+    def _rearm_hotkeys(self, event):
+        self.hotkeys_armed = True
     
     def cleanup_hotkeys(self):
         """Remove todos os atalhos registrados"""
-        if self.keyboard_module and self.hotkeys_registered:
+        if self.keyboard_module:
+            self.keyboard_module.unhook_all()
+            self.keyboard_module = None
+            self.registered_hotkeys.clear()
+
+    def process_ui_actions(self):
+        self.root.after(50, self.process_ui_actions)
+        while not self.closing:
             try:
-                for hotkey in self.hotkeys_registered:
-                    try:
-                        self.keyboard_module.remove_hotkey(hotkey)
-                        print(f"✓ Hotkey removido: {hotkey}")
-                    except Exception as e:
-                        print(f"✗ Erro ao remover hotkey {hotkey}: {e}")
-                self.hotkeys_registered.clear()
-            except Exception as e:
-                print(f"Erro ao limpar hotkeys: {e}")
+                action = self.ui_actions.get_nowait()
+            except queue.Empty:
+                return
+            action()
     
     def create_tray_icon(self):
         """Cria ícone para a bandeja do sistema"""
@@ -350,10 +325,10 @@ class AuthenticatorApp:
         
         try:
             menu = pystray.Menu(
-                pystray.MenuItem("Show/Hide", self.toggle_window, default=True),
-                pystray.MenuItem("Add Account", self.add_account),
+                pystray.MenuItem("Show", lambda: self.ui_actions.put(self.show_window), default=True),
+                pystray.MenuItem("Add Account", lambda: self.ui_actions.put(self.add_account)),
                 pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Exit", self.quit_app)
+                pystray.MenuItem("Exit", lambda: self.ui_actions.put(self.quit_app))
             )
             
             icon_image = self.create_tray_icon()
@@ -372,78 +347,48 @@ class AuthenticatorApp:
     
     def start_tray(self):
         """Inicia system tray em thread separada"""
-        if self.tray_icon and TRAY_AVAILABLE:
-            def run_tray():
-                try:
-                    self.tray_icon.run()
-                except Exception:
-                    pass
-            
-            self.tray_thread = threading.Thread(target=run_tray, daemon=True)
-            self.tray_thread.start()
+        self.tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
+        self.tray_thread.start()
     
     def on_closing(self):
         """Chamado quando usuário tenta fechar a janela"""
-        try:
-            if self.config_manager.get('tray.enabled', True) and TRAY_AVAILABLE:
-                self.hide_to_tray()
-            else:
-                from tkinter import messagebox
-                if messagebox.askyesno("Confirmar saída", 
-                                      "Deseja realmente sair do aplicativo?",
-                                      parent=self.root):
-                    self.quit_app()
-        except Exception as e:
-            print(f"Erro ao fechar: {e}")
+        if self.tray_icon and self.config_manager.get('tray.hide_on_close', True):
+            self.hide_to_tray()
+        elif messagebox.askyesno("Confirmar saída",
+                                 "Deseja realmente sair do aplicativo?",
+                                 parent=self.root):
             self.quit_app()
     
     def hide_to_tray(self):
         """Minimiza para a bandeja do sistema"""
-        if TRAY_AVAILABLE and self.tray_icon and self.config_manager.get('tray.hide_on_close', True):
+        if self.tray_icon:
             self.root.withdraw()
-            self.is_hidden = True
             if not self.tray_thread or not self.tray_thread.is_alive():
                 self.start_tray()
         else:
             self.root.iconify()
-            self.is_hidden = False
+
+    def is_window_hidden(self):
+        return self.root.state() in ('withdrawn', 'iconic')
     
     def show_window(self):
         """Mostra a janela"""
-        try:
-            if self.is_hidden or self.root.state() == 'withdrawn':
-                self.root.deiconify()
-                self.is_hidden = False
+        if self.is_window_hidden():
+            self.root.deiconify()
             
-            if self.root.state() == 'iconic':
-                self.root.deiconify()
-        
-            self.root.lift()
-            self.root.attributes('-topmost', True)
-            self.root.after(100, lambda: self.root.attributes('-topmost', 
-                           self.config_manager.get('ui.always_on_top', False)))
-            self.root.focus_force()
-            self.position_window()
-        except Exception as e:
-            print(f"Erro ao mostrar janela: {e}")
+        self.root.lift()
+        self.root.attributes('-topmost', True)
+        self.root.after(100, lambda: self.root.attributes('-topmost',
+                        self.config_manager.get('ui.always_on_top', False)))
+        self.root.focus_force()
+        self.position_window()
     
     def toggle_window(self):
-        """Alterna entre mostrar e esconder"""
-        try:
-            current_state = self.root.state()
-            
-            if self.is_hidden or current_state == 'withdrawn':
-                self.show_window()
-            elif current_state == 'iconic':
-                self.show_window()
-            else:
-                self.hide_to_tray()
-        except Exception as e:
-            print(f"Erro ao alternar janela: {e}")
-            try:
-                self.show_window()
-            except:
-                pass
+        """Mostra a janela, ou a esconde se ela já estiver em foco"""
+        if self.is_window_hidden() or self.root.focus_get() is None:
+            self.show_window()
+        else:
+            self.hide_to_tray()
     
     def position_window(self, position=None):
         """Posiciona a janela conforme configuração"""
@@ -490,29 +435,18 @@ class AuthenticatorApp:
     
     def quit_app(self):
         """Sai completamente do aplicativo"""
+        if self.closing:
+            return
+        self.closing = True
         print("\n🔄 Encerrando aplicativo...")
 
-        self.update_thread_running = False
-        if hasattr(self, 'update_thread') and self.update_thread.is_alive():
-            print("  ⏳ Aguardando thread de atualização...")
-            self.update_thread.join(timeout=2)
-        print("  🎹 Removendo hotkeys...")
         self.cleanup_hotkeys()
-        if self.tray_icon:
-            print("  📱 Parando system tray...")
-            try:
-                self.tray_icon.stop()
-            except Exception as e:
-                print(f"  ⚠ Erro ao parar tray: {e}")
-        print("  🪟 Fechando janela...")
-        try:
-            self.root.quit()
-            self.root.destroy()
-        except Exception as e:
-            print(f"  ⚠ Erro ao fechar janela: {e}")
+        if self.tray_thread and self.tray_thread.is_alive():
+            self.tray_icon.stop()
+            self.tray_thread.join(timeout=2)
+        self.root.destroy()
         
         print("✓ Aplicativo encerrado")
-        sys.exit(0)
     
     def load_accounts(self):
         """Carrega contas"""
@@ -580,34 +514,35 @@ class AuthenticatorApp:
     
     def add_account(self):
         """Abre diálogo para adicionar conta"""
-        if self.dialog_open:
-            print("⚠ Diálogo já está aberto")
+        if self.is_window_hidden():
+            self.show_window()
+
+        if self.add_dialog:
+            self.add_dialog.bring_to_front()
             return
         
-        if self.is_hidden:
-            self.show_window()
-        
-        self.dialog_open = True
+        self.add_dialog = AddAccountDialog(self.root, self.totp_generator)
         try:
-            dialog = AddAccountDialog(self.root, self.totp_generator)
-            result = dialog.show()
-        
-        
-            if result:
-                try:
-                    self.database.add_account(
-                        result['name'],
-                        result['secret'],
-                        result['issuer']
-                    )
-                    self.load_accounts()
-                    self.update_status(f"Account '{result['name']}' added", "success")
-                    
-                except Exception as e:
-                    messagebox.showerror("Error", f"Error adding account: {e}")
-                    self.update_status("Error adding account", "error")
+            result = self.add_dialog.show()
         finally:
-            self.dialog_open = False
+            self.add_dialog = None
+        
+        if not result or self.closing:
+            return
+
+        try:
+            self.database.add_account(
+                result['name'],
+                result['secret'],
+                result['issuer']
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"Error adding account: {e}", parent=self.root)
+            self.update_status("Error adding account", "error")
+            return
+        
+        self.load_accounts()
+        self.update_status(f"Account '{result['name']}' added", "success")
     
     def delete_account(self, account_id):
         """Remove conta"""
@@ -629,21 +564,24 @@ class AuthenticatorApp:
     
     def refresh_tokens(self):
         """Atualiza todos os tokens"""
-        try:
-            widgets_copy = self.token_widgets.copy()
+        for widget in self.token_widgets:
+            if isinstance(widget, TokenWidget):
+                widget.update_token()
             
-            for widget in widgets_copy:
-                if widget and hasattr(widget, 'update_token'):
-                    try:
-                        if widget.winfo_exists():
-                            widget.update_token()
-                    except tk.TclError:
-                        if widget in self.token_widgets:
-                            self.token_widgets.remove(widget)
-                    except Exception as e:
-                        print(f"Erro ao atualizar widget: {e}")
-        except Exception as e:
-            print(f"Erro ao atualizar tokens: {e}")
+    def refresh_tokens_loop(self):
+        self.refresh_tokens()
+        delay_ms = 1000 - int(time.time() * 1000) % 1000
+        self.root.after(delay_ms, self.refresh_tokens_loop)
+
+    def ready_message(self):
+        toggle_hotkey = self.registered_hotkeys.get('toggle_window')
+        if toggle_hotkey:
+            return f"Ready - {toggle_hotkey.upper()} to toggle"
+        return "Ready"
+
+    def show_ready_status(self):
+        self.status_reset_job = None
+        self.status_bar.configure(text=self.ready_message(), fg="#5f6368")
     
     def update_status(self, message, status_type="info"):
         """Atualiza status com cores"""
@@ -655,31 +593,12 @@ class AuthenticatorApp:
         
         self.status_bar.configure(text=message, fg=colors.get(status_type, "#5f6368"))
         
+        if self.status_reset_job:
+            self.root.after_cancel(self.status_reset_job)
+            self.status_reset_job = None
+
         if status_type != "error":
-            hotkey = self.config_manager.get('hotkeys.toggle_window', 'ctrl+shift+a')
-            self.root.after(3000, lambda: self.status_bar.configure(
-                text=f"Ready - {hotkey.upper()} to toggle", 
-                fg="#5f6368"
-            ))
-    
-    def start_update_thread(self):
-        """Thread para atualização automática"""
-        def update_loop():
-            while self.update_thread_running:
-                try:
-                    if self.root and self.root.winfo_exists():
-                        self.root.after(0, self.refresh_tokens)
-                    else:
-                        break
-                    time.sleep(1)
-                except tk.TclError:
-                    break
-                except Exception as e:
-                    print(f"Erro na thread de atualização: {e}")
-                    break
-        
-        self.update_thread = threading.Thread(target=update_loop, daemon=True)
-        self.update_thread.start()
+            self.status_reset_job = self.root.after(3000, self.show_ready_status)
     
     def run(self):
         """Executa o app"""

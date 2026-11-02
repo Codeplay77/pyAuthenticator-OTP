@@ -5,8 +5,8 @@
 ### Modern 2FA/TOTP Authentication Manager
 
 [![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/Codeplay77/OTP-pyAuth)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](license)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/Codeplay77/pyAuthenticator-OTP)
 [![Code Style](https://img.shields.io/badge/code%20style-PEP%208-orange.svg)](https://www.python.org/dev/peps/pep-0008/)
 
 **A secure, feature-rich desktop application for managing Time-based One-Time Passwords (TOTP) with a beautiful Material Design interface.**
@@ -18,8 +18,8 @@
 
 ### Core Features
 - ** TOTP Generation**: RFC 6238 compliant, compatible with Google Authenticator
-- ** Modern UI**: Beautiful Material Design interface with smooth animations
-- ** Secure Storage**: AES-256 encryption for all secret keys
+- ** Modern UI**: Material Design inspired interface
+- ** Secure Storage**: Fernet encryption (AES-128-CBC + HMAC-SHA256) for all secret keys
 - ** Auto-Update**: Tokens refresh automatically every 30 seconds
 - ** One-Click Copy**: Quick clipboard access to tokens
 - ** Cross-Platform**: Works on Windows, Linux, and macOS
@@ -29,7 +29,6 @@
 - ** System Tray**: Minimize to system tray for background operation
 - ** Progress Bar**: Visual countdown for token expiration
 - ** Material Design**: Google-inspired clean interface
-- ** Search & Filter**: Organize accounts by issuer
 - ** Local Database**: SQLite storage with encrypted secrets
 - ** Key Recovery**: Retrieve original secret keys when needed
 - ** Input Validation**: Real-time validation of secret keys
@@ -38,7 +37,7 @@
 - **End-to-End Encryption**: All secrets encrypted at rest
 - **No Cloud Sync**: Complete data privacy (local-only storage)
 - **Secure Deletion**: Confirmation dialogs for account removal
-- **Thread-Safe Operations**: Robust multi-threading architecture
+- **Thread-Safe UI**: Hotkey and tray events are dispatched to the Tk main loop
 
 ---
 
@@ -51,7 +50,7 @@
 <td>
 
 **Required:**
-- Python 3.10 or higher
+- Python 3.8 or higher
 - pip (Python package manager)
 
 </td>
@@ -69,8 +68,8 @@
 
 #### 1️ Clone the Repository
 ```bash
-git clone https://github.com/Codeplay77/OTP-pyAuth.git
-cd OTP-pyAuth
+git clone https://github.com/Codeplay77/pyAuthenticator-OTP.git
+cd pyAuthenticator-OTP
 ```
 
 #### 2️ Install Dependencies
@@ -103,27 +102,15 @@ pyinstaller --onefile --windowed --name=PythonAuthenticator ^
 
 #### Linux/macOS
 ```bash
-# Make script executable and run
-chmod +x build.sh
-./build.sh
-
-# Or manually with PyInstaller
 pyinstaller --onefile --windowed --name=PythonAuthenticator \
     --icon=icon.ico \
     --add-data "icon.ico:." \
     main.py
 ```
 
-**Output:** Executable will be created in `dist/` folder (~15-25 MB)
+**Output:** Executable will be created in `dist/` folder (~12-25 MB, depending on Python and library versions)
 
-### Docker Support (Coming Soon)
-```bash
-# Build image
-docker build -t python-authenticator .
-
-# Run container
-docker run -it python-authenticator
-```
+> Account data (`authenticator.db`, `key.key`) is stored next to the executable. `build.bat` only replaces `PythonAuthenticator.exe` and keeps the other files in `dist/`.
 
 ---
 
@@ -179,12 +166,14 @@ docker run -it python-authenticator
 
 | Shortcut | Action | Configurable |
 |----------|--------|--------------|
-| `Ctrl+Shift+A` | Toggle window visibility | ✅ Yes |
+| `Ctrl+Shift+A` | Show the window, or hide it if it already has focus | ✅ Yes |
 | `Ctrl+Shift+N` | Add new account | ✅ Yes |
 | `ESC` | Close dialog | ❌ No |
 | `Enter` | Confirm dialog | ❌ No |
 
-**Configure in:** `config.json`
+**Configure in:** `config.json` (set a hotkey to `"disabled"` to turn it off)
+
+> Global hotkeys are captured in every application. Avoid combinations used for navigation, such as `ctrl+tab` or `shift+tab`.
 
 ### Token Lifecycle
 
@@ -241,7 +230,7 @@ docker run -it python-authenticator
 ### File Structure
 
 ```
-OTP-pyAuth/
+pyAuthenticator-OTP/
 ├── Core Application Files
 │   ├── main.py                    # Entry point & dependency checks
 │   ├── authenticator_app.py       # Main application controller
@@ -256,15 +245,18 @@ OTP-pyAuth/
 │   ├── key.key                    # Fernet encryption key
 │   └── config.json                # User preferences
 │
+├── Tools
+│   └── recover_otp_keys.py        # Prints decrypted secrets from the database
+│
 ├── Build & Deploy
 │   ├── requirements.txt           # Python dependencies
-│   ├── PythonAuthenticator.spec   # PyInstaller configuration
+│   ├── install_dependencies.bat   # Windows dependency installer
 │   ├── build.bat                  # Windows build script
-│   └── build.sh                   # Linux/macOS build script
+│   └── icon.ico                   # Executable icon
 │
 └── Documentation
-    ├── README.md                  # This file
-    └── LICENSE                    # MIT License
+    ├── readme.md                  # This file
+    └── license                    # MIT License
 ```
 
 ### Configuration File (`config.json`)
@@ -299,13 +291,6 @@ OTP-pyAuth/
 ```
 
 </details>
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PYTHONOPTIMIZE` | Enable Python optimizations | `0` |
-| `PYTHONHASHSEED` | Random hash seed | `random` |
 
 ### Important Files
 
@@ -377,7 +362,7 @@ xcopy key.key %BACKUP_DIR%\key_%date:~-4,4%%date:~-10,2%%date:~-7,2%.key /Y
 | **SQL Injection** | Prepared statements with parameter binding | 🟢 High |
 | **Input Validation** | Real-time Base32 validation | 🟢 High |
 | **Memory Safety** | Tokens never persisted, only generated | 🟢 High |
-| **Thread Safety** | Thread-safe GUI updates via root.after() | 🟢 High |
+| **Thread Safety** | Hotkey and tray events queued to the Tk main loop | 🟢 High |
 
 #### Security Limitations
 
@@ -479,10 +464,10 @@ xcopy key.key %BACKUP_DIR%\key_%date:~-4,4%%date:~-10,2%%date:~-7,2%.key /Y
 | Library | Version | Purpose |
 |---------|---------|---------|
 | **pyotp** | ≥2.8.0 | TOTP generation |
-| **cryptography** | ≥41.0.0 | Encryption |
-| **Pillow** | ≥10.0.0 | Image handling |
-| **pystray** | ≥0.19.0 | System tray |
-| **keyboard** | ≥0.13.0 | Global hotkeys |
+| **cryptography** | ≥3.4.8 | Encryption |
+| **Pillow** | ≥9.0.0 | Image handling |
+| **pystray** | ≥0.19.4 | System tray |
+| **keyboard** | ≥0.13.5 | Global hotkeys |
 
 </td>
 </tr>
@@ -516,8 +501,8 @@ xcopy key.key %BACKUP_DIR%\key_%date:~-4,4%%date:~-10,2%%date:~-7,2%.key /Y
 #### 1. Clone & Setup Environment
 ```bash
 # Clone repository
-git clone https://github.com/Codeplay77/OTP-pyAuth.git
-cd OTP-pyAuth
+git clone https://github.com/Codeplay77/pyAuthenticator-OTP.git
+cd pyAuthenticator-OTP
 
 # Create virtual environment (recommended)
 python -m venv venv
@@ -532,26 +517,10 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Install development dependencies
-pip install pytest pylint mypy black isort
+pip install black isort flake8
 ```
 
-#### 2. Run Tests
-```bash
-# Run unit tests
-pytest tests/ -v
-
-# Run with coverage
-pytest --cov=. --cov-report=html
-
-# Type checking
-mypy *.py --strict
-
-# Linting
-pylint *.py
-flake8 *.py
-```
-
-#### 3. Code Formatting
+#### 2. Code Formatting
 ```bash
 # Format code
 black *.py --line-length 88
@@ -575,16 +544,15 @@ We welcome contributions! Please follow these guidelines:
    git checkout -b feature/amazing-feature
    ```
 3. **Make your changes** following code standards
-4. **Add tests** for new functionality
-5. **Commit with clear messages**
+4. **Commit with clear messages**
    ```bash
    git commit -m "feat: add amazing feature"
    ```
-6. **Push to your fork**
+5. **Push to your fork**
    ```bash
    git push origin feature/amazing-feature
    ```
-7. **Open a Pull Request**
+6. **Open a Pull Request**
 
 #### Commit Message Convention
 
@@ -644,9 +612,6 @@ def generate_token(self, secret: str) -> str:
 ### Running in Development Mode
 
 ```bash
-# Run with debug logging
-PYTHONOPTIMIZE=0 python main.py
-
 # Run with profiling
 python -m cProfile -o profile.stats main.py
 
@@ -874,17 +839,14 @@ killall PythonAuthenticator
 # Update PyInstaller
 pip install --upgrade pyinstaller
 
-# Clear PyInstaller cache
-pyinstaller --clean PythonAuthenticator.spec
-
-# Rebuild
-python -m PyInstaller PythonAuthenticator.spec
+# Rebuild (build.bat already runs PyInstaller with --clean)
+build.bat
 ```
 
 ### Getting Help
 
 1. **Check existing issues:** [GitHub Issues](../../issues)
-2. **Search documentation:** This README and `/docs` folder
+2. **Search documentation:** This README
 3. **Ask the community:** [Discussions](../../discussions)
 4. **Report a bug:** [New Issue](../../issues/new)
 
@@ -932,26 +894,26 @@ furnished to do so, subject to the following conditions:
 
 ### Contributors
 
-<a href="https://github.com/Codeplay77/OTP-pyAuth/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Codeplay77/OTP-pyAuth" />
+<a href="https://github.com/Codeplay77/pyAuthenticator-OTP/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Codeplay77/pyAuthenticator-OTP" />
 </a>
 
 ---
 
 ## Project Stats
 
-![GitHub stars](https://img.shields.io/github/stars/Codeplay77/OTP-pyAuth?style=social)
-![GitHub forks](https://img.shields.io/github/forks/Codeplay77/OTP-pyAuth?style=social)
-![GitHub issues](https://img.shields.io/github/issues/Codeplay77/OTP-pyAuth)
-![GitHub pull requests](https://img.shields.io/github/issues-pr/Codeplay77/OTP-pyAuth)
-![GitHub last commit](https://img.shields.io/github/last-commit/Codeplay77/OTP-pyAuth)
-![GitHub code size](https://img.shields.io/github/languages/code-size/Codeplay77/OTP-pyAuth)
+![GitHub stars](https://img.shields.io/github/stars/Codeplay77/pyAuthenticator-OTP?style=social)
+![GitHub forks](https://img.shields.io/github/forks/Codeplay77/pyAuthenticator-OTP?style=social)
+![GitHub issues](https://img.shields.io/github/issues/Codeplay77/pyAuthenticator-OTP)
+![GitHub pull requests](https://img.shields.io/github/issues-pr/Codeplay77/pyAuthenticator-OTP)
+![GitHub last commit](https://img.shields.io/github/last-commit/Codeplay77/pyAuthenticator-OTP)
+![GitHub code size](https://img.shields.io/github/languages/code-size/Codeplay77/pyAuthenticator-OTP)
 
 ---
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Codeplay77/OTP-pyAuth&type=Date)](https://star-history.com/#Codeplay77/OTP-pyAuth&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Codeplay77/pyAuthenticator-OTP&type=Date)](https://star-history.com/#Codeplay77/pyAuthenticator-OTP&Date)
 
 ---
 
@@ -970,6 +932,6 @@ If you find this project helpful, please consider:
 
 **Made with ❤️ by [Codeplay77](https://github.com/Codeplay77)**
 
-[🏠 Homepage](https://github.com/Codeplay77/OTP-pyAuth) • [📖 Documentation](https://github.com/Codeplay77/OTP-pyAuth/wiki) • [🐛 Issues](https://github.com/Codeplay77/OTP-pyAuth/issues) • [💬 Discussions](https://github.com/Codeplay77/OTP-pyAuth/discussions)
+[🏠 Homepage](https://github.com/Codeplay77/pyAuthenticator-OTP) • [📖 Documentation](https://github.com/Codeplay77/pyAuthenticator-OTP/wiki) • [🐛 Issues](https://github.com/Codeplay77/pyAuthenticator-OTP/issues) • [💬 Discussions](https://github.com/Codeplay77/pyAuthenticator-OTP/discussions)
 
 </div>
