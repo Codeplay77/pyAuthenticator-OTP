@@ -114,21 +114,25 @@ pyinstaller --onefile --windowed --name=PythonAuthenticator \
 
 ### Automated Releases (Windows x64)
 
-Pushing a tag that starts with `v` runs [`.github/workflows/release.yml`](.github/workflows/release.yml). It builds the executable with 64-bit Python through `build.bat`, checks that the binary is x64 and publishes a GitHub release with:
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds the executable with 64-bit Python through `build.bat`, checks that the binary is x64 and publishes a GitHub release with:
 
 - `PythonAuthenticator-<tag>-win-x64.exe`
 - `PythonAuthenticator-<tag>-win-x64.exe.sha256`
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+Start it in one of two ways:
 
-Running the workflow manually from the **Actions** tab builds `PythonAuthenticator-dev-win-x64.exe` as a downloadable artifact without creating a release.
+1. **Actions tab:** open **Build and Release**, click **Run workflow**, choose the branch and type a new version (e.g. `v1.1.0`). The tag is created on the built commit.
+2. **Tag push:** push a tag that starts with `v` or `V`:
+   ```bash
+   git tag v1.1.0
+   git push origin v1.1.0
+   ```
+
+Versions must look like `v1.1`, `v1.1.0` or `v1.1.0-beta.1`. A manual run stops before building if the tag already exists.
 
 Verify a download:
 ```bash
-sha256sum -c PythonAuthenticator-v1.0.0-win-x64.exe.sha256
+sha256sum -c PythonAuthenticator-v1.1.0-win-x64.exe.sha256
 ```
 
 ---
