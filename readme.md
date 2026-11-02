@@ -27,6 +27,7 @@
 ###  Advanced Features
 - **Global Hotkeys**: Toggle window with Ctrl+Shift+A, add accounts with Ctrl+Shift+N
 - **System Tray**: Minimize to system tray for background operation
+- **Light & Dark Themes**: Follows the Windows app mode by default; switch with the moon/sun button. Coordinated colors, crisp icons, visible keyboard focus, and readable token cards in both modes.
 - **Progress Bar**: Visual countdown for token expiration
 - **Material Design**: Google-inspired clean interface
 - **Local Database**: SQLite storage with encrypted secrets
@@ -184,6 +185,7 @@ sha256sum -c PythonAuthenticator-v1.1.0-win-x64.exe.sha256
 | **View Time Remaining** | Check the progress bar or countdown timer |
 | **Delete Account** | Click ✖ button → Confirm deletion |
 | **Recover Secret Key** | Click 🔑 icon → Confirm security warning |
+| **Switch Theme** | Click 🌙 (dark) or ☀ (light) in the top-right corner |
 
 ### Keyboard Shortcuts
 
@@ -261,6 +263,8 @@ pyAuthenticator-OTP/
 │   ├── totp_generator.py          # TOTP token generation (RFC 6238)
 │   ├── token_widget.py            # Individual token UI component
 │   ├── add_account_dialog.py      # Add account dialog
+│   ├── theme.py                   # Light/dark color palettes
+│   ├── ui_components.py           # Themed buttons, icons and tooltips
 │   └── config_manager.py          # Configuration management
 │
 ├── Data Files (Auto-generated)
@@ -294,6 +298,7 @@ pyAuthenticator-OTP/
     "add_account": "ctrl+shift+n"
   },
   "ui": {
+    "theme": "system",
     "window_position": "right",
     "margin": 20,
     "always_on_top": false,
@@ -314,6 +319,18 @@ pyAuthenticator-OTP/
 ```
 
 </details>
+
+`ui.theme` accepts `"system"` (follows the Windows app mode at startup), `"light"` or `"dark"`. The 🌙/☀ button saves `"light"` or `"dark"`; set it back to `"system"` to follow Windows again.
+
+The interface preserves the list's scroll position when switching themes. Long account names are shortened visually; hover over them to see the full name. The token bar shows the time **remaining** and changes color in the final five seconds. Copy confirmation remains visible for two seconds.
+
+Buttons support Tab navigation, Enter/Space activation, and focus indicators. In the delete dialog, Cancel receives focus first. The add-account form scrolls on smaller windows while its action buttons stay visible. Window dimensions and icons adapt to Tk's display scaling.
+
+UI regression checks use synthetic accounts and in-memory storage, without opening your database or configuration. Run them in a desktop session with the project dependencies installed:
+
+```bash
+python -m unittest discover -s tests -v
+```
 
 ### Important Files
 
@@ -504,6 +521,7 @@ xcopy key.key %BACKUP_DIR%\key_%date:~-4,4%%date:~-10,2%%date:~-7,2%.key /Y
 │  • Main Window (authenticator_app.py)   │
 │  • Token Widgets (token_widget.py)      │
 │  • Dialogs (add_account_dialog.py)      │
+│  • Themes (theme.py)                    │
 └─────────────────────────────────────────┘
                 ↓
 ┌─────────────────────────────────────────┐

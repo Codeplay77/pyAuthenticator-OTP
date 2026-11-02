@@ -74,6 +74,7 @@ class ConfigManager:
                 - toggle_window: Ctrl+Shift+A (show/hide app)
                 - add_account: Ctrl+Shift+N (add new account)
             ui:
+                - theme: "system" (follows Windows; "light" or "dark" to force)
                 - window_position: "right" (screen edge)
                 - margin: 20 (pixels from screen edge)
                 - always_on_top: False
@@ -90,6 +91,7 @@ class ConfigManager:
                 "add_account": "ctrl+shift+n"
             },
             "ui": {
+                "theme": "system",
                 "window_position": "right",
                 "margin": 20,
                 "always_on_top": False,
