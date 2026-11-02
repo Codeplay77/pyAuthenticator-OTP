@@ -17,21 +17,21 @@
 ## Features
 
 ### Core Features
-- ** TOTP Generation**: RFC 6238 compliant, compatible with Google Authenticator
-- ** Modern UI**: Material Design inspired interface
-- ** Secure Storage**: Fernet encryption (AES-128-CBC + HMAC-SHA256) for all secret keys
-- ** Auto-Update**: Tokens refresh automatically every 30 seconds
-- ** One-Click Copy**: Quick clipboard access to tokens
-- ** Cross-Platform**: Works on Windows, Linux, and macOS
+- **TOTP Generation**: RFC 6238 compliant, compatible with Google Authenticator
+- **Modern UI**: Material Design inspired interface
+- **Secure Storage**: Fernet encryption (AES-128-CBC + HMAC-SHA256) for all secret keys
+- **Auto-Update**: Tokens refresh automatically every 30 seconds
+- **One-Click Copy**: Quick clipboard access to tokens
+- **Cross-Platform**: Works on Windows, Linux, and macOS
 
 ###  Advanced Features
-- ** Global Hotkeys**: Toggle window with Ctrl+Shift+A, add accounts with Ctrl+Shift+N
-- ** System Tray**: Minimize to system tray for background operation
-- ** Progress Bar**: Visual countdown for token expiration
-- ** Material Design**: Google-inspired clean interface
-- ** Local Database**: SQLite storage with encrypted secrets
-- ** Key Recovery**: Retrieve original secret keys when needed
-- ** Input Validation**: Real-time validation of secret keys
+- **Global Hotkeys**: Toggle window with Ctrl+Shift+A, add accounts with Ctrl+Shift+N
+- **System Tray**: Minimize to system tray for background operation
+- **Progress Bar**: Visual countdown for token expiration
+- **Material Design**: Google-inspired clean interface
+- **Local Database**: SQLite storage with encrypted secrets
+- **Key Recovery**: Retrieve original secret keys when needed
+- **Input Validation**: Real-time validation of secret keys
 
 ###  Security Features
 - **End-to-End Encryption**: All secrets encrypted at rest
