@@ -4,13 +4,20 @@ on:
   push:
     tags:
       - 'v*'
+      - 'V*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag to create, e.g. v1.1.0
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 env:
-  ASSET_NAME: PythonAuthenticator-${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}-win-x64
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  ASSET_NAME: PythonAuthenticator-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}-win-x64
 
 jobs:
   build:
@@ -19,6 +26,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Validate release tag
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+(\.\d+)*(-[0-9a-z.]+)?$') {
+            throw "Invalid release tag '$env:RELEASE_TAG'. Use a version such as v1.1 or v1.1.0"
+          }
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            $remoteRefs = git ls-remote --tags --refs origin
+            if ($LASTEXITCODE -ne 0) { throw "Could not read remote tags" }
+            $tags = $remoteRefs | ForEach-Object { ($_ -split "`t")[1] -replace '^refs/tags/', '' }
+            if ($tags -contains $env:RELEASE_TAG) {
+              throw "Tag '$env:RELEASE_TAG' already exists. Choose a new version."
+            }
+          }
 
       - name: Set up Python x64
         uses: actions/setup-python@v7
@@ -62,7 +83,6 @@ jobs:
   release:
     name: Publish GitHub release
     needs: build
-    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -77,7 +97,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
-          gh release create "$GITHUB_REF_NAME" release/*
+          gh release create "$RELEASE_TAG" release/*
           --repo "$GITHUB_REPOSITORY"
-          --title "$GITHUB_REF_NAME"
+          --target "$GITHUB_SHA"
+          --title "$RELEASE_TAG"
           --generate-notes
